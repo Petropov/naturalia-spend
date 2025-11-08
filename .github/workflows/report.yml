@@ -1,0 +1,62 @@
+name: Build Naturalia Report
+on:
+  push:
+    paths:
+      - 'data/**'
+  schedule:
+    - cron: '0 6 * * 1'  # Mondays 06:00 UTC
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      - run: pip install -r requirements.txt
+      - name: Build report
+        run: python src/build_report.py
+      - name: Commit report
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add reports/*.png reports/summary.md || true
+          git commit -m "Auto: update Naturalia report" || true
+          git push
+      - name: Email report
+        env:
+          SMTP_SERVER: ${{ secrets.SMTP_SERVER }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          FROM_EMAIL: ${{ secrets.FROM_EMAIL }}
+          TO_EMAIL: ${{ secrets.TO_EMAIL }}
+        run: |
+          python - <<'PY'
+          import os, smtplib, email.message, mimetypes, pathlib
+          msg = email.message.EmailMessage()
+          msg['Subject'] = "Naturalia Weekly Report"
+          msg['From'] = os.environ['FROM_EMAIL']
+          msg['To'] = os.environ['TO_EMAIL']
+          body = pathlib.Path("reports/summary.md").read_text(encoding="utf-8")
+          msg.set_content(body)
+
+          # attach weekly chart if present
+          p = pathlib.Path("reports/weekly.png")
+          if p.exists():
+              with p.open("rb") as f:
+                  msg.add_attachment(f.read(), maintype="image", subtype="png", filename=p.name)
+
+          # attach price changes chart if present
+          p2 = pathlib.Path("reports/price_changes.png")
+          if p2.exists():
+              with p2.open("rb") as f:
+                  msg.add_attachment(f.read(), maintype="image", subtype="png", filename=p2.name)
+
+          smtp = smtplib.SMTP(os.environ['SMTP_SERVER'], int(os.environ['SMTP_PORT']))
+          smtp.starttls()
+          smtp.login(os.environ['SMTP_USERNAME'], os.environ['SMTP_PASSWORD'])
+          smtp.send_message(msg)
+          smtp.quit()
+          PY
