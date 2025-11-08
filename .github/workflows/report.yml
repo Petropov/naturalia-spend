@@ -1,8 +1,17 @@
 name: Build Naturalia Report
 on:
   schedule:
-    - cron: '0 6 * * 1'   # Mondays 06:00 UTC (07:00 Paris winter)
+    - cron: '0 6 * * 1'   # Mondays 06:00 UTC
   workflow_dispatch:
+    inputs:
+      lookback_days:
+        description: "How many days back to ingest"
+        required: false
+        default: "365"
+      send_email:
+        description: "Send email summary?"
+        required: false
+        default: "true"
   push:
     paths:
       - 'data/**'
@@ -13,7 +22,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-python@v4
         with:
           python-version: '3.11'
@@ -35,6 +43,8 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Ingest Naturalia PDFs via Gmail API
+        env:
+          LOOKBACK_DAYS: ${{ github.event.inputs.lookback_days || '365' }}
         run: python src/gmail_pull.py
 
       - name: Build report artifacts
@@ -49,6 +59,7 @@ jobs:
           git push
 
       - name: Email weekly overview
+        if: ${{ (github.event.inputs.send_email || 'true') == 'true' }}
         env:
           SMTP_SERVER:   ${{ secrets.SMTP_SERVER }}
           SMTP_PORT:     ${{ secrets.SMTP_PORT }}
@@ -59,76 +70,20 @@ jobs:
         run: |
           python - <<'PY'
           import os, smtplib, email.message, pathlib, pandas as pd
-
-          # --- load data
-          rcpt = pathlib.Path("data/receipts.csv")
-          items = pathlib.Path("data/items.csv")
-          if not rcpt.exists() or rcpt.stat().st_size==0:
-              body = "No Naturalia data yet."
-          else:
-              df = pd.read_csv(rcpt, parse_dates=["date"])
-              df = df.dropna(subset=["date"])
-              # weekly sums
-              df["week"] = df["date"].dt.to_period("W").dt.start_time
-              weekly = df.groupby("week", as_index=False)["total"].sum(numeric_only=True).sort_values("week")
-              # KPIs
-              lifetime_sum = float(df["total"].sum())
-              last_week = weekly.iloc[-1]["total"] if len(weekly)>0 else 0.0
-              prev_week = weekly.iloc[-2]["total"] if len(weekly)>1 else 0.0
-              wow = ((last_week - prev_week)/prev_week*100) if prev_week>0 else 0.0
-              t4w = weekly["total"].tail(4).mean() if len(weekly)>=1 else 0.0
-              t12w = weekly["total"].tail(12).mean() if len(weekly)>=1 else 0.0
-
-              # Top price movers (optional, only if item-level present)
-              movers_txt = "No item-level price data."
-              if items.exists() and items.stat().st_size>0:
-                  it = pd.read_csv(items)
-                  if not it.empty:
-                      it["eff_unit"] = it.apply(
-                          lambda r: (r["line_total"]/r["qty"]) if pd.notna(r["qty"]) and str(r["qty"]) not in ("","0") and pd.notna(r["line_total"]) else r["unit_price"],
-                          axis=1
-                      )
-                      it["eff_unit"] = pd.to_numeric(it["eff_unit"], errors="coerce")
-                      it = it.merge(df[["receipt_id","week"]], on="receipt_id", how="left")
-                      grp = it.dropna(subset=["product_norm","eff_unit","week"]).groupby(["product_norm","week"])["eff_unit"].mean().reset_index()
-                      last_two = grp.sort_values(["product_norm","week"]).groupby("product_norm").tail(2)
-                      deltas=[]
-                      for p, g in last_two.groupby("product_norm"):
-                          if len(g)==2:
-                              g=g.sort_values("week")
-                              prev, cur = g.iloc[0]["eff_unit"], g.iloc[1]["eff_unit"]
-                              if pd.notna(prev) and pd.notna(cur) and prev>0:
-                                  deltas.append((p, prev, cur, (cur-prev)/prev*100))
-                      deltas = sorted(deltas, key=lambda x: abs(x[3]), reverse=True)[:5]
-                      if deltas:
-                          movers_txt = "\n".join([f"- {n[:40]}: {pr:.2f}→{cu:.2f} ({pct:+.1f}%)" for n,pr,cu,pct in deltas])
-
-              body = (
-                  "Naturalia — Weekly Overview\n"
-                  f"- Last week spend: €{last_week:.2f}\n"
-                  f"- WoW change: {wow:+.1f}%\n"
-                  f"- T4W avg: €{t4w:.2f}\n"
-                  f"- T12W avg: €{t12w:.2f}\n"
-                  f"- Lifetime sum: €{lifetime_sum:.2f}\n"
-                  "\nTop price movers (if any):\n"
-                  f"{movers_txt}\n"
-                  "\nFull details in attached charts and repo reports/summary.md"
-              )
-
-          # --- email
+          body_path = pathlib.Path("reports/summary.md")
+          if not body_path.exists():
+              print("No summary.md; skipping email."); raise SystemExit(0)
+          body = body_path.read_text(encoding="utf-8")
           msg = email.message.EmailMessage()
           msg["Subject"] = "Naturalia — Weekly Overview"
           msg["From"] = os.environ["FROM_EMAIL"]
           msg["To"]   = os.environ["TO_EMAIL"]
           msg.set_content(body)
-
-          # attach charts if present
           for fname in ("weekly.png","price_changes.png"):
               p = pathlib.Path("reports")/fname
               if p.exists():
                   with p.open("rb") as f:
                       msg.add_attachment(f.read(), maintype="image", subtype="png", filename=fname)
-
           s = smtplib.SMTP(os.environ["SMTP_SERVER"], int(os.environ["SMTP_PORT"]))
           s.starttls(); s.login(os.environ["SMTP_USERNAME"], os.environ["SMTP_PASSWORD"])
           s.send_message(msg); s.quit()
