@@ -46,7 +46,7 @@ jobs:
         env:
           LOOKBACK_DAYS: ${{ github.event.inputs.lookback_days || '365' }}
           GMAIL_SEARCH_Q: "from:naturalia has:attachment filename:pdf newer_than:${{ github.event.inputs.lookback_days || '365' }}d"
-        run: python src/gmail_pull.py
+        run: python -m src.gmail_pull
 
       - name: Build report artifacts
         run: python src/build_report.py
