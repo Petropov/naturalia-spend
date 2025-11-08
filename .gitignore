@@ -1,5 +1,8 @@
 .venv/
-token.json
-credentials.json
-raw/
 __pycache__/
+credentials.json
+token.json
+raw/
+reports/
+data/
+.DS_Store
