@@ -45,6 +45,7 @@ jobs:
       - name: Ingest Naturalia PDFs via Gmail API
         env:
           LOOKBACK_DAYS: ${{ github.event.inputs.lookback_days || '365' }}
+          GMAIL_SEARCH_Q: "from:naturalia has:attachment filename:pdf newer_than:${{ github.event.inputs.lookback_days || '365' }}d"
         run: python src/gmail_pull.py
 
       - name: Build report artifacts
