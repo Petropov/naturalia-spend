@@ -47,18 +47,19 @@ def get_label_id(svc, name):
 
 def run(modify_after=False):
     ensure()
+    import os
+    search_q = os.environ.get('GMAIL_SEARCH_Q')
     scopes = SCOPES_MODIFY if modify_after else SCOPES_READONLY
     creds = Credentials.from_authorized_user_file('token.json', scopes)
     svc = build('gmail','v1',credentials=creds)
 
-    src_label_id = get_label_id(svc, LABEL)
-    if not src_label_id:
-        raise SystemExit(f'Label "{LABEL}" not found')
+    src_label_id = get_label_id(svc, LABEL) if not search_q else None
     dst_label_id = get_label_id(svc, PROCESSED_LABEL) if modify_after else None
 
     seen = load_hashes()
     import os
     lookback = os.environ.get('LOOKBACK_DAYS','365')
+    print('Search query: ', search_q or f'newer_than:{lookback}d')
     page_token = None
 
     while True:
