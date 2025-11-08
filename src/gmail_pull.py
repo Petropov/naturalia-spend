@@ -3,7 +3,7 @@ import os, base64, csv, hashlib
 from datetime import datetime
 from googleapiclient.discovery import build
 from google.oauth2.credentials import Credentials
-from parse_receipt import parse_attachment
+from src.parse_receipt import parse_attachment
 
 LABEL = 'Naturalia'
 PROCESSED_LABEL = 'Naturalia/Processed'
