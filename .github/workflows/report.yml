@@ -1,0 +1,37 @@
+name: Build Naturalia Report
+
+on:
+  workflow_dispatch:
+    inputs:
+      lookback_days:
+        description: Days to look back for Gmail attachments
+        required: false
+        default: '365'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Python deps
+        run: |
+          pip install -r requirements.txt
+
+      - name: Recreate Gmail creds (for ingestion)
+        env:
+          GMAIL_CREDENTIALS_B64: ${{ secrets.GMAIL_CREDENTIALS_B64 }}
+          GMAIL_TOKEN_B64:       ${{ secrets.GMAIL_TOKEN_B64 }}
+        run: |
+          echo "$GMAIL_CREDENTIALS_B64" | base64 -d > credentials.json
+          echo "$GMAIL_TOKEN_B64"       | base64 -d > token.json
+
+      - name: Ingest Naturalia PDFs via Gmail API
+        env:
+          LOOKBACK_DAYS: ${{ github.event.inputs.lookback_days || '365' }}
+          GMAIL_SEARCH_Q: "from:naturalia has:attachment filename:pdf newer_than:${{ github.event.inputs.lookback_days || '365' }}d"
+        run: python -m src.gmail_pull
