@@ -5,6 +5,10 @@ from googleapiclient.discovery import build
 from google.oauth2.credentials import Credentials
 from src.parse_receipt import parse_attachment
 
+def _normalize_name(s: str) -> str:
+    return ' '.join((s or '').split()).lower()
+
+
 LABEL = 'Naturalia'
 PROCESSED_LABEL = 'Naturalia/Processed'
 
@@ -124,7 +128,7 @@ def run(modify_after=False):
                 ])
                 for it in parsed.get('items', []):
                     append_row(ITEMS_CSV, [
-                        receipt_id, it['line_no'], it['product_raw'], it['product_norm'],
+                        receipt_id, it['line_no'], it['product_raw'], (it.get('product_norm') or _normalize_name(it.get('product_raw',''))),
                         it['qty'], it['unit_price'], it['line_total'], 'EUR'
                     ])
 
