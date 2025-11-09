@@ -5,6 +5,7 @@ import pandas as pd
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.cluster import KMeans
 
+VERSION_TAG = "Naturalia Dashboard v3 — receipts-only tables + PXX"
 RCPT = "data/receipts.csv"
 ITEM = "data/items.csv"
 OUT_DIR = "artifacts"
