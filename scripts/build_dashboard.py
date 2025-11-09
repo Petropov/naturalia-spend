@@ -49,31 +49,26 @@ def table_html(df: pd.DataFrame, cols, header=None, empty="No data"):
 # ======================================================
 # A) Time-slice totals
 # ======================================================
+
 rc_valid = rc.dropna(subset=["date"]).copy()
 grand_total = float(rc_valid["total"].sum())
 
-by_month = (rc_valid
-            .assign(month=rc_valid["date"].dt.to_period("M").astype(str))
-            .groupby("month", as_index=False)["total"].sum()
-            .sort_values("month"))
+r_by_month = (rc_valid.assign(month=rc_valid["date"].dt.to_period("M").astype(str))
+              .groupby("month", as_index=False)["total"].sum()
+              .sort_values("month"))
+r_by_week  = (rc_valid.assign(week=rc_valid["date"].dt.strftime("%G-W%V"))
+              .groupby("week", as_index=False)["total"].sum()
+              .sort_values("week"))
+r_by_tod   = (rc_valid.assign(type_of_day=rc_valid["date"].dt.weekday.map(lambda d: "Weekend" if d >= 5 else "Weekday"))
+              .groupby("type_of_day", as_index=False)["total"].sum())
+r_by_wday  = (rc_valid.assign(weekday=rc_valid["date"].dt.day_name())
+              .groupby("weekday", as_index=False)["total"].sum())
 
-by_week = (rc_valid
-           .assign(week=rc_valid["date"].dt.strftime("%G-W%V"))
-           .groupby("week", as_index=False)["total"].sum()
-           .sort_values("week"))
-
-by_wday = (rc_valid
-           .assign(weekday=rc_valid["date"].dt.day_name())
-           .groupby("weekday", as_index=False)["total"].sum())
-
-print("\n=== A) Totals by time slices ===")
-print(f"Grand total: {grand_total:.2f}")
-print(f"Sum by month: {float(by_month['total'].sum()):.2f}")
-print(f"Sum by week : {float(by_week ['total'].sum()):.2f}")
-print(f"Sum by wday : {float(by_wday ['total'].sum()):.2f}")
-print("\n-- by month --");  print(by_month.to_string(index=False))
-print("\n-- by week --");   print(by_week.to_string(index=False))
-print("\n-- by weekday --");print(by_wday.to_string(index=False))
+# hard assertions so we don't regress
+assert abs(r_by_month["total"].sum() - grand_total) < 1e-6, "month sum != grand total"
+assert abs(r_by_week["total"].sum()  - grand_total) < 1e-6, "week sum != grand total"
+assert abs(r_by_wday["total"].sum()  - grand_total) < 1e-6, "weekday sum != grand total"
+assert abs(r_by_tod["total"].sum()   - grand_total) < 1e-6, "type-of-day sum != grand total"
 
 # ======================================================
 # B) Price evolution across receipts (warning-free)
