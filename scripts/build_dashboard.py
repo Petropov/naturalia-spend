@@ -248,18 +248,20 @@ parts.append(f"""
   <tr><td>Delta</td><td>{fmt_eur(items_total - grand_total)}</td></tr>
 </table>
 """)
-
-# time slices
+# time slices (RECEIPTS ONLY)
 parts.append("<h3>Spend by Month</h3>")
-parts.append(table_html(by_month, ["month","total"], ["Month","Spend"], "No dated receipts"))
+parts.append(table_html(r_by_month, ["month","total"], ["Month","Spend"], "No dated receipts"))
 
 parts.append("<h3>Spend by ISO Week</h3>")
-parts.append(table_html(by_week, ["week","total"], ["Week","Spend"], "No dated receipts"))
+parts.append(table_html(r_by_week, ["week","total"], ["Week","Spend"], "No dated receipts"))
+
+parts.append("<h3>Spend by Type of Day</h3>")
+parts.append(table_html(r_by_tod, ["type_of_day","total"], ["Type of Day","Spend"], "No dated receipts"))
 
 parts.append("<h3>Spend by Weekday</h3>")
-parts.append(table_html(by_wday, ["weekday","total"], ["Weekday","Spend"], "No dated receipts"))
+parts.append(table_html(r_by_wday, ["weekday","total"], ["Weekday","Spend"], "No dated receipts"))
 
-# price change
+# price change (warning-free Section B)
 parts.append("<h3>Price Change (Last vs Previous)</h3>")
 parts.append(table_html(
     price_change,
@@ -268,7 +270,7 @@ parts.append(table_html(
     "No repeated products yet"
 ))
 
-# categories
+# categories (learned)
 parts.append("<h3>Spend by Category (Learned)</h3>")
 parts.append(table_html(cat, ["category_name","spend"], ["Category","Spend"], "No learned categories yet"))
 
