@@ -1,5 +1,6 @@
 # scripts/build_dashboard.py
-import os, re
+import os
+import re
 import pandas as pd
 
 RCPT = "data/receipts.csv"
@@ -31,7 +32,7 @@ def table(df, cols, header=None, empty_msg="No data"):
         return f"<em>{empty_msg}</em>"
     t = df.loc[:, use].copy()
     for c in t.columns:
-        if any(k in c for k in ("total", "price", "spend")) or c in ("items_sum",):
+        if any(k in c for k in ("total","price","spend")) or c in ("items_sum",):
             t[c] = t[c].apply(fmt_eur)
     if header:
         t.columns = header
@@ -57,44 +58,52 @@ for c in ("total","subtotal","tax","confidence"):
     if c in receipts.columns:
         receipts[c] = pd.to_numeric(receipts[c], errors="coerce")
 
-# items: nums & names
+# items: nums & name detection
 if not items.empty:
     for c in ("qty","unit_price","line_total"):
         if c in items.columns:
             items[c] = pd.to_numeric(items[c], errors="coerce")
-    if "product_norm" not in items.columns:
-        items["product_norm"] = items.get("product_raw","").fillna("").astype(str).str.lower()
+# pick the available name column in your data (you have 'product')
+NAME_COL = "product_norm" if "product_norm" in items.columns else \
+           ("product_raw" if "product_raw" in items.columns else \
+            ("product" if "product" in items.columns else None))
+if NAME_COL is None:
+    items["__name__"] = ""
+    NAME_COL = "__name__"
 
 # ---------- KPIs ----------
 n_receipts = receipts.shape[0]
 n_items    = items.shape[0]
-receipts_total = float(receipts["total"].fillna(0).sum()) if ("total" in receipts.columns) else 0.0
-items_total    = float(items["line_total"].fillna(0).sum()) if ("line_total" in items.columns) else 0.0
+receipts_total = float(receipts.get("total", pd.Series(dtype=float)).fillna(0).sum())
+items_total    = float(items.get("line_total", pd.Series(dtype=float)).fillna(0).sum())
 overall_total  = receipts_total or items_total
 
 # ---------- receipt-based time slices (avoid double count) ----------
 by_month = pd.DataFrame(); by_week = pd.DataFrame(); by_tod = pd.DataFrame(); by_wd = pd.DataFrame()
 if not receipts.empty and receipts["date"].notna().any() and "total" in receipts.columns:
     rc = receipts.dropna(subset=["date"]).copy()
-
+    # month
     rc["month"] = rc["date"].dt.to_period("M").astype(str)
     by_month = rc.groupby("month", as_index=False)["total"].sum().sort_values("month")
-
+    # ISO week
     rc["year_week"] = rc["date"].dt.strftime("%G-W%V")
     by_week = rc.groupby("year_week", as_index=False)["total"].sum().sort_values("year_week")
-
+    # type of day
     rc["type_of_day"] = rc["date"].dt.weekday.map(lambda d: "Weekend" if d >= 5 else "Weekday")
     by_tod = rc.groupby("type_of_day", as_index=False)["total"].sum().sort_values("type_of_day")
-
+    # weekday
     rc["weekday"] = rc["date"].dt.day_name()
     order = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"]
     by_wd = (rc.groupby("weekday", as_index=False)["total"].sum()
                .set_index("weekday").reindex(order).fillna(0).reset_index())
 
-# ---------- items joined to dates ----------
+# ---------- items joined to a single date per receipt_id ----------
+# Your receipts show SAME receipt_id repeated across rows. To avoid exploding the join,
+# dedupe receipts per receipt_id before merging dates into items.
 if not items.empty:
-    if {"receipt_id"}.issubset(items.columns) and {"receipt_id"}.issubset(receipts.columns):
-        df = items.merge(receipts[["receipt_id","date"]], on="receipt_id", how="left")
+    rc_unique = receipts.dropna(subset=["date"]).drop_duplicates(["receipt_id"], keep="first")
+    if "receipt_id" in items.columns and "receipt_id" in rc_unique.columns:
+        df = items.merge(rc_unique[["receipt_id","date"]], on="receipt_id", how="left")
     else:
         df = items.copy(); df["date"] = pd.NaT
     df["date"] = pd.to_datetime(df["date"], errors="coerce")
@@ -104,39 +113,31 @@ else:
 # ---------- most frequent items (name + qty) ----------
 top_items = pd.DataFrame()
 if not df.empty and "qty" in df.columns:
-    # pick a display name with fallback so it never collapses to a single number
-    disp = df["product_norm"].fillna("")
-    fallback = df.get("product_raw","").fillna("")
-    disp = disp.where(disp.str.len() > 0, fallback.astype(str).str.lower())
+    disp = df[NAME_COL].fillna("").astype(str).str.lower()
     df["freq_name"] = disp.map(norm_freq_name)
     freq = (df[df["freq_name"].str.len() > 0]
               .groupby("freq_name", as_index=False)["qty"].sum()
               .sort_values("qty", ascending=False))
     top_items = freq.head(25)
 
-# ---------- price change (clear item & dates) ----------
+# ---------- price change (last vs previous per item) ----------
 price_change = pd.DataFrame(columns=[
     "item","prev_date","prev_price","last_date","last_price","change_abs","change_pct","days_between"
 ])
-if not df.empty:
+if not df.empty and ("line_total" in df.columns) and ("qty" in df.columns):
     tmp = df.copy()
-    # display item name
-    disp = tmp["product_norm"].fillna("")
-    fallback = tmp.get("freq_name", tmp.get("product_raw","")).fillna("")
-    tmp["item"] = disp.where(disp.str.len() > 0, fallback.astype(str).str.lower())
-
+    tmp["item"] = tmp[NAME_COL].fillna("").astype(str).str.lower()
     # derive unit_price if missing
     if "unit_price" in tmp.columns:
         need = tmp["unit_price"].isna()
         tmp.loc[need, "unit_price"] = (tmp["line_total"] / tmp["qty"]).where(tmp["qty"] > 0)
     else:
         tmp["unit_price"] = (tmp["line_total"] / tmp["qty"]).where(tmp["qty"] > 0)
-
     tmp = tmp.dropna(subset=["unit_price"])
     tmp["date"] = pd.to_datetime(tmp["date"], errors="coerce")
     tmp = tmp[tmp["date"].notna()].sort_values(["item","date"])
+    # keep items that appear at least twice
     last2 = tmp.groupby("item").tail(2)
-
     def _summ(g: pd.DataFrame):
         if len(g) < 2: return None
         g = g.sort_values("date")
@@ -155,7 +156,6 @@ if not df.empty:
             "change_pct": round(ch_pct,2) if ch_pct is not None else None,
             "days_between": days
         })
-
     pc = last2.groupby("item").apply(_summ).dropna().reset_index(drop=True)
     price_change = pc.sort_values(["change_pct","change_abs"], ascending=[False, False]).head(50)
 
@@ -163,9 +163,13 @@ if not df.empty:
 category_breakdown = pd.DataFrame(columns=["category","spend"])
 if os.path.exists(LEARNED_CATS) and os.path.getsize(LEARNED_CATS) > 0 and not df.empty:
     catmap = pd.read_csv(LEARNED_CATS)
-    if {"product_norm","category_name"}.issubset(catmap.columns):
-        tmp = df.merge(catmap[["product_norm","category_name"]]
-                       .rename(columns={"category_name":"category"}), on="product_norm", how="left")
+    # catmap should have product_norm or product column; map to our NAME_COL
+    name_key = "product_norm" if "product_norm" in catmap.columns else \
+               ("product" if "product" in catmap.columns else None)
+    if name_key is not None and "category_name" in catmap.columns:
+        tmp = df.merge(catmap[[name_key,"category_name"]]
+                       .rename(columns={name_key:"__name__", "category_name":"category"}),
+                       left_on=NAME_COL, right_on="__name__", how="left")
         tmp["category"] = tmp["category"].fillna("other")
         category_breakdown = (tmp.groupby("category", as_index=False)["line_total"]
                                 .sum().rename(columns={"line_total":"spend"})
@@ -208,7 +212,7 @@ parts.append(f"""
 </table>
 """)
 
-# time slices
+# time slices (receipt-based)
 parts.append("<h3>Spend by Month</h3>")
 parts.append(table(by_month, ["month","total"], ["Month","Spend"], "No dated receipts"))
 
