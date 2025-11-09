@@ -234,6 +234,8 @@ STYLE = """
 items_total = float(it["line_total"].fillna(0).sum()) if "line_total" in it.columns else 0.0
 
 parts = []
+parts.insert(0, f"<div class='muted'>Build: {VERSION_TAG}</div>")  # 👈 add this line here
+
 # KPIs + reconciliation
 parts.append(f"""
 <h1>Naturalia — Spend Dashboard</h1>
