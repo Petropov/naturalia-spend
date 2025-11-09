@@ -60,10 +60,13 @@ jobs:
           [ -f data/items.csv ]    && cp -v data/items.csv out/    || true
           echo "${{ github.run_id }}" > out/_run_id.txt
 
+      - name: Set TODAY date
+        run: echo "TODAY=$(date +%Y%m%d)" >> $GITHUB_ENV
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: naturalia-${{ github.run_id }}-$(date +%Y%m%d)-${{ github.event.inputs.lookback_days || '365' }}d
+          name: naturalia-${{ github.run_id }}-${{ env.TODAY }}-${{ github.event.inputs.lookback_days || '365' }}d
           path: out/**
           retention-days: 30
 
@@ -82,4 +85,4 @@ jobs:
             echo "- **Line items**: ${ITEMS:-0}" >> $GITHUB_STEP_SUMMARY
           fi
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Artifact: \`naturalia-${GITHUB_RUN_ID}-$(date +%Y%m%d)-${{ github.event.inputs.lookback_days || '365' }}d\`" >> $GITHUB_STEP_SUMMARY
+          echo "Artifact: \`naturalia-${GITHUB_RUN_ID}-${{ env.TODAY }}-${{ github.event.inputs.lookback_days || '365' }}d\`" >> $GITHUB_STEP_SUMMARY
