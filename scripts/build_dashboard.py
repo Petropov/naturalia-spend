@@ -50,44 +50,68 @@ print(by_week.to_string(index=False))
 print("-- by weekday --")
 print(by_wday.to_string(index=False))
 
-# ==============================================================
-#  B) Price change for repeated products
-# ==============================================================
-print("\n=== B) Price evolution across receipts ===")
 
+# === B) Price evolution across receipts (warning-free) ===
+
+# 1) pick the item name column that exists
+name_col = (
+    "product" if "product" in it.columns else
+    ("product_norm" if "product_norm" in it.columns else
+     ("product_raw" if "product_raw" in it.columns else None))
+)
+if name_col is None:
+    name_col = "product"  # fallback
+    it[name_col] = ""
+
+# 2) join items -> receipt date with a stable key
 join_key = "receipt_uid" if "receipt_uid" in it.columns else "receipt_id"
-df = it.merge(rc_valid[[join_key,"date"]].rename(columns={join_key:"receipt_id"}), 
-              on="receipt_id", how="left")
+tmp = it.copy()
+tmp["qty"]        = pd.to_numeric(tmp.get("qty"), errors="coerce").fillna(1)
+tmp["unit_price"] = pd.to_numeric(tmp.get("unit_price"), errors="coerce")
+tmp["line_total"] = pd.to_numeric(tmp.get("line_total"), errors="coerce")
+tmp["unit_price"] = tmp["unit_price"].fillna(tmp["line_total"] / tmp["qty"])
 
-df["unit_price"] = df["unit_price"].fillna(df["line_total"]/df["qty"])
-df["date"] = pd.to_datetime(df["date"], errors="coerce")
+rc_join = rc_valid[[join_key, "date"]].rename(columns={join_key: "receipt_id"})
+tmp = tmp.merge(rc_join, on="receipt_id", how="left")
+tmp["date"] = pd.to_datetime(tmp["date"], errors="coerce")
 
-name_col = "product" if "product" in df.columns else \
-           ("product_norm" if "product_norm" in df.columns else df.columns[2])
+# keep only items that appear in at least 2 different receipts
+counts = tmp.groupby(name_col)["receipt_id"].nunique()
+repeated_names = counts[counts >= 2].index
+tmp = tmp[tmp[name_col].isin(repeated_names)]
 
-multi = df.groupby(name_col).filter(lambda g: g["receipt_id"].nunique() > 1)
-
-def price_change(g):
-    g = g.sort_values("date")
-    if len(g) < 2:
-        return None
-    prev, last = g.iloc[-2], g.iloc[-1]
-    return pd.Series({
-        "product": g.name,
-        "prev_date": prev["date"].date(),
-        "prev_price": round(prev["unit_price"],2),
-        "last_date": last["date"].date(),
-        "last_price": round(last["unit_price"],2),
-        "Δ_price": round(last["unit_price"]-prev["unit_price"],2),
-        "Δ_%": round((last["unit_price"]-prev["unit_price"])/prev["unit_price"]*100,2)
-                if prev["unit_price"] else None
-    })
-
-changes = multi.groupby(name_col).apply(price_change).dropna().reset_index(drop=True)
-if len(changes)==0:
-    print("No repeated product names across receipts yet.")
+# if nothing repeats, short-circuit cleanly
+if tmp.empty:
+    price_change = pd.DataFrame(
+        columns=["item","prev_date","prev_price","last_date","last_price","Δ_price","Δ_%","days_between"]
+    )
 else:
-    print(changes.to_string(index=False))
+    # 3) compute previous & last rows per item WITHOUT groupby.apply
+    s = tmp.sort_values([name_col, "date"])
+
+    # last occurrence per item
+    idx_last = s.groupby(name_col)["date"].idxmax()
+    last = s.loc[idx_last, [name_col, "date", "unit_price"]].rename(
+        columns={"date": "last_date", "unit_price": "last_price"}
+    )
+
+    # previous occurrence per item: drop the last row then take max again
+    s_wo_last = s.drop(index=idx_last)
+    idx_prev = s_wo_last.groupby(name_col)["date"].idxmax()
+    prev = s_wo_last.loc[idx_prev, [name_col, "date", "unit_price"]].rename(
+        columns={"date": "prev_date", "unit_price": "prev_price"}
+    )
+
+    # 4) combine & compute deltas
+    pc = prev.merge(last, on=name_col, how="inner")
+    pc["Δ_price"] = (pc["last_price"] - pc["prev_price"]).round(2)
+    pc["Δ_%"] = ((pc["last_price"] - pc["prev_price"]) / pc["prev_price"] * 100).round(2)
+    pc["days_between"] = (pd.to_datetime(pc["last_date"]) - pd.to_datetime(pc["prev_date"])).dt.days
+
+    price_change = pc.rename(columns={name_col: "item"})[
+        ["item","prev_date","prev_price","last_date","last_price","Δ_price","Δ_%","days_between"]
+    ].sort_values(["Δ_%","Δ_price"], ascending=[False, False]).reset_index(drop=True)
+
 
 # ==============================================================
 #  C) Category discovery (French-aware unsupervised clustering)
