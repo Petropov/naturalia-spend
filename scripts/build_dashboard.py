@@ -1,37 +1,35 @@
 # scripts/build_dashboard.py
-import os
-import re
+import os, re
 import pandas as pd
 
 RCPT = "data/receipts.csv"
 ITEM = "data/items.csv"
 OUT_DIR = "artifacts"
 OUT_HTML = os.path.join(OUT_DIR, "dashboard.html")
-LEARNED_CATS = "artifacts/categories_learned.csv"  # optional: produced by scripts/learn_categories.py
+LEARNED_CATS = "artifacts/categories_learned.csv"  # optional
 
 os.makedirs(OUT_DIR, exist_ok=True)
 
-# --------- helpers ---------
-def read_csv_safe(path, **kw) -> pd.DataFrame:
+# ---------- helpers ----------
+def read_csv_safe(path, **kw):
     if not os.path.exists(path):
         return pd.DataFrame()
     return pd.read_csv(path, **kw)
 
-def fmt_eur(x) -> str:
+def fmt_eur(x):
     try:
-        val = float(x) if pd.notna(x) else 0.0
-        return f"€{val:,.2f}".replace(",", " ")
+        v = float(x) if pd.notna(x) else 0.0
+        return f"€{v:,.2f}".replace(",", " ")
     except Exception:
         return "€0.00"
 
-def table(df: pd.DataFrame, cols, header=None, empty_msg="No data") -> str:
+def table(df, cols, header=None, empty_msg="No data"):
     if df is None or df.empty:
         return f"<em>{empty_msg}</em>"
     use = [c for c in cols if c in df.columns]
     if not use:
         return f"<em>{empty_msg}</em>"
     t = df.loc[:, use].copy()
-    # format money-looking columns
     for c in t.columns:
         if any(k in c for k in ("total", "price", "spend")) or c in ("items_sum",):
             t[c] = t[c].apply(fmt_eur)
@@ -39,115 +37,93 @@ def table(df: pd.DataFrame, cols, header=None, empty_msg="No data") -> str:
         t.columns = header
     return t.to_html(index=False, border=0, classes="tbl")
 
-def normalize_for_frequency(s: str) -> str:
+def norm_freq_name(s: str) -> str:
     s = (s or "").lower()
-    # strip pack sizes like "4x125g", "500 ml", "2×", etc.
     s = re.sub(r"\b\d+\s*(x|×)?\s*\d*\s*(ml|l|g|kg|cl|pack|pcs)\b", " ", s)
-    # strip standalone sizes like "500g"
     s = re.sub(r"\b\d+\s*(ml|l|g|kg|cl)\b", " ", s)
     s = re.sub(r"\s+", " ", s).strip()
     return s
 
-# --------- load & normalize ----------
+# ---------- load ----------
 receipts = read_csv_safe(RCPT)
 items    = read_csv_safe(ITEM)
 
-# receipts: dates & numbers
+# receipts: dates & nums
 if not receipts.empty and "date" in receipts.columns:
     receipts["date"] = pd.to_datetime(receipts["date"], errors="coerce")
 else:
     receipts["date"] = pd.NaT
-
-for c in ("total", "subtotal", "tax", "confidence"):
+for c in ("total","subtotal","tax","confidence"):
     if c in receipts.columns:
         receipts[c] = pd.to_numeric(receipts[c], errors="coerce")
 
-# items: numbers + normalized name
+# items: nums & names
 if not items.empty:
-    for c in ("qty", "unit_price", "line_total"):
+    for c in ("qty","unit_price","line_total"):
         if c in items.columns:
             items[c] = pd.to_numeric(items[c], errors="coerce")
     if "product_norm" not in items.columns:
-        if "product_raw" in items.columns:
-            items["product_norm"] = items["product_raw"].fillna("").str.strip().str.lower()
-        else:
-            items["product_norm"] = ""
+        items["product_norm"] = items.get("product_raw","").fillna("").astype(str).str.lower()
 
-# --------- KPIs ----------
+# ---------- KPIs ----------
 n_receipts = receipts.shape[0]
 n_items    = items.shape[0]
-if not receipts.empty and "total" in receipts.columns and receipts["total"].notna().any():
-    overall_total = float(receipts["total"].fillna(0).sum())
-elif not items.empty and "line_total" in items.columns:
-    overall_total = float(items["line_total"].fillna(0).sum())
-else:
-    overall_total = 0.0
+receipts_total = float(receipts["total"].fillna(0).sum()) if ("total" in receipts.columns) else 0.0
+items_total    = float(items["line_total"].fillna(0).sum()) if ("line_total" in items.columns) else 0.0
+overall_total  = receipts_total or items_total
 
-# also compute items total for reconciliation section
-items_total = float(items["line_total"].fillna(0).sum()) if ("line_total" in items.columns and not items.empty) else 0.0
-
-# --------- time-based (USE RECEIPT TOTALS to avoid double count) ----------
-by_month = pd.DataFrame()
-by_week  = pd.DataFrame()
-by_tod   = pd.DataFrame()  # type of day
-by_wd    = pd.DataFrame()  # weekday
-
+# ---------- receipt-based time slices (avoid double count) ----------
+by_month = pd.DataFrame(); by_week = pd.DataFrame(); by_tod = pd.DataFrame(); by_wd = pd.DataFrame()
 if not receipts.empty and receipts["date"].notna().any() and "total" in receipts.columns:
     rc = receipts.dropna(subset=["date"]).copy()
 
-    # by month (YYYY-MM)
     rc["month"] = rc["date"].dt.to_period("M").astype(str)
-    by_month = (rc.groupby("month", as_index=False)["total"].sum()
-                  .sort_values("month"))
+    by_month = rc.groupby("month", as_index=False)["total"].sum().sort_values("month")
 
-    # by ISO week (YYYY-Www)
     rc["year_week"] = rc["date"].dt.strftime("%G-W%V")
-    by_week = (rc.groupby("year_week", as_index=False)["total"].sum()
-                 .sort_values("year_week"))
+    by_week = rc.groupby("year_week", as_index=False)["total"].sum().sort_values("year_week")
 
-    # by type of day (Weekday vs Weekend)
     rc["type_of_day"] = rc["date"].dt.weekday.map(lambda d: "Weekend" if d >= 5 else "Weekday")
     by_tod = rc.groupby("type_of_day", as_index=False)["total"].sum().sort_values("type_of_day")
 
-    # by weekday name (Mon..Sun)
     rc["weekday"] = rc["date"].dt.day_name()
     order = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"]
     by_wd = (rc.groupby("weekday", as_index=False)["total"].sum()
                .set_index("weekday").reindex(order).fillna(0).reset_index())
 
-# --------- items joined with dates for item-based slices ----------
+# ---------- items joined to dates ----------
 if not items.empty:
-    if "receipt_id" in items.columns and "receipt_id" in receipts.columns:
+    if {"receipt_id"}.issubset(items.columns) and {"receipt_id"}.issubset(receipts.columns):
         df = items.merge(receipts[["receipt_id","date"]], on="receipt_id", how="left")
     else:
-        df = items.copy()
-        if "date" not in df:
-            df["date"] = pd.NaT
+        df = items.copy(); df["date"] = pd.NaT
     df["date"] = pd.to_datetime(df["date"], errors="coerce")
 else:
     df = items.copy()
 
-# --------- most frequent items (with light normalization) ----------
+# ---------- most frequent items (name + qty) ----------
 top_items = pd.DataFrame()
 if not df.empty and "qty" in df.columns:
-    df["freq_name"] = df["product_norm"].map(normalize_for_frequency)
+    # pick a display name with fallback so it never collapses to a single number
+    disp = df["product_norm"].fillna("")
+    fallback = df.get("product_raw","").fillna("")
+    disp = disp.where(disp.str.len() > 0, fallback.astype(str).str.lower())
+    df["freq_name"] = disp.map(norm_freq_name)
     freq = (df[df["freq_name"].str.len() > 0]
               .groupby("freq_name", as_index=False)["qty"].sum()
               .sort_values("qty", ascending=False))
     top_items = freq.head(25)
 
-# --------- price change (last vs previous per item) ----------
+# ---------- price change (clear item & dates) ----------
 price_change = pd.DataFrame(columns=[
     "item","prev_date","prev_price","last_date","last_price","change_abs","change_pct","days_between"
 ])
-
 if not df.empty:
     tmp = df.copy()
-    # pick a display name
-    if "product_norm" not in tmp.columns or tmp["product_norm"].fillna("").eq("").all():
-        tmp["item"] = tmp.get("freq_name", tmp.get("product_raw", "")).fillna("").astype(str)
-    else:
-        tmp["item"] = tmp["product_norm"].fillna("").astype(str)
+    # display item name
+    disp = tmp["product_norm"].fillna("")
+    fallback = tmp.get("freq_name", tmp.get("product_raw","")).fillna("")
+    tmp["item"] = disp.where(disp.str.len() > 0, fallback.astype(str).str.lower())
 
     # derive unit_price if missing
     if "unit_price" in tmp.columns:
@@ -159,37 +135,35 @@ if not df.empty:
     tmp = tmp.dropna(subset=["unit_price"])
     tmp["date"] = pd.to_datetime(tmp["date"], errors="coerce")
     tmp = tmp[tmp["date"].notna()].sort_values(["item","date"])
-
     last2 = tmp.groupby("item").tail(2)
 
-    def summarize(g: pd.DataFrame):
-        if len(g) < 2:
-            return None
+    def _summ(g: pd.DataFrame):
+        if len(g) < 2: return None
         g = g.sort_values("date")
         prev, last = g.iloc[-2], g.iloc[-1]
         pp, lp = float(prev["unit_price"]), float(last["unit_price"])
-        change_abs = lp - pp
-        change_pct = (change_abs / pp * 100.0) if pp else None
-        days_between = (last["date"] - prev["date"]).days
+        ch_abs = lp - pp
+        ch_pct = (ch_abs / pp * 100.0) if pp else None
+        days   = (last["date"] - prev["date"]).days
         return pd.Series({
             "item": g.name,
             "prev_date": prev["date"].date().isoformat(),
             "prev_price": round(pp,2),
             "last_date": last["date"].date().isoformat(),
             "last_price": round(lp,2),
-            "change_abs": round(change_abs,2),
-            "change_pct": round(change_pct,2) if change_pct is not None else None,
-            "days_between": days_between
+            "change_abs": round(ch_abs,2),
+            "change_pct": round(ch_pct,2) if ch_pct is not None else None,
+            "days_between": days
         })
 
-    pc = last2.groupby("item").apply(summarize).dropna().reset_index(drop=True)
+    pc = last2.groupby("item").apply(_summ).dropna().reset_index(drop=True)
     price_change = pc.sort_values(["change_pct","change_abs"], ascending=[False, False]).head(50)
 
-# --------- category breakdown (learned mapping only; no hardcoding) ----------
+# ---------- categories (learned only; show when available) ----------
 category_breakdown = pd.DataFrame(columns=["category","spend"])
 if os.path.exists(LEARNED_CATS) and os.path.getsize(LEARNED_CATS) > 0 and not df.empty:
     catmap = pd.read_csv(LEARNED_CATS)
-    if "product_norm" in catmap.columns and "category_name" in catmap.columns:
+    if {"product_norm","category_name"}.issubset(catmap.columns):
         tmp = df.merge(catmap[["product_norm","category_name"]]
                        .rename(columns={"category_name":"category"}), on="product_norm", how="left")
         tmp["category"] = tmp["category"].fillna("other")
@@ -197,7 +171,7 @@ if os.path.exists(LEARNED_CATS) and os.path.getsize(LEARNED_CATS) > 0 and not df
                                 .sum().rename(columns={"line_total":"spend"})
                                 .sort_values("spend", ascending=False))
 
-# --------- build HTML ----------
+# ---------- HTML ----------
 STYLE = """
 <style>
  body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif;margin:24px;}
@@ -214,8 +188,6 @@ STYLE = """
 """
 
 parts = []
-
-# KPIs
 parts.append(f"""
 <h1>Naturalia — Spend Dashboard</h1>
 <div class="kpis">
@@ -225,18 +197,18 @@ parts.append(f"""
 </div>
 """)
 
-# Reconciliation (receipts vs items)
+# reconciliation
 parts.append(f"""
 <h3>Reconciliation (Items vs Receipts)</h3>
 <table class="tbl">
   <tr><th>Source</th><th>Amount</th></tr>
-  <tr><td>Receipts total</td><td>{fmt_eur(overall_total)}</td></tr>
+  <tr><td>Receipts total</td><td>{fmt_eur(receipts_total)}</td></tr>
   <tr><td>Items total</td><td>{fmt_eur(items_total)}</td></tr>
-  <tr><td>Delta</td><td>{fmt_eur(items_total - overall_total)}</td></tr>
+  <tr><td>Delta</td><td>{fmt_eur(items_total - receipts_total)}</td></tr>
 </table>
 """)
 
-# Time slices (receipt-based)
+# time slices
 parts.append("<h3>Spend by Month</h3>")
 parts.append(table(by_month, ["month","total"], ["Month","Spend"], "No dated receipts"))
 
@@ -249,7 +221,7 @@ parts.append(table(by_tod, ["type_of_day","total"], ["Type of Day","Spend"], "No
 parts.append("<h3>Spend by Weekday</h3>")
 parts.append(table(by_wd, ["weekday","total"], ["Weekday","Spend"], "No dated receipts"))
 
-# Items-based insights
+# items insights
 parts.append("<h3>Most Frequently Bought Items (Top 25 by Qty)</h3>")
 parts.append(table(top_items, ["freq_name","qty"], ["Item","Total Qty"], "No repeated items yet"))
 
@@ -261,15 +233,11 @@ parts.append(table(
     "Not enough observations yet"
 ))
 
-# Categories (learned)
+# categories
 parts.append("<h3>Spend by Category (Learned)</h3>")
 parts.append(table(category_breakdown, ["category","spend"], ["Category","Spend"], "No learned categories yet"))
 
-html = (
-    "<!doctype html><html><head><meta charset='utf-8'>"
-    "<title>Naturalia — Spend Dashboard</title>"
-    f"{STYLE}</head><body>" + "".join(parts) + "</body></html>"
-)
+html = "<!doctype html><html><head><meta charset='utf-8'><title>Naturalia — Spend Dashboard</title>" + STYLE + "</head><body>" + "".join(parts) + "</body></html>"
 
 with open(OUT_HTML, "w", encoding="utf-8") as f:
     f.write(html)
