@@ -214,6 +214,30 @@ pct_df.to_csv(os.path.join(OUT_DIR,"price_percentiles.csv"), index=False)
 # ======================================================
 # HTML build (no charts)
 # ======================================================
+
+OUT_DIR = "artifacts"
+OUT_HTML = os.path.join(OUT_DIR, "dashboard.html")
+os.makedirs(OUT_DIR, exist_ok=True)
+
+def _fmt_eur(x):
+    try:
+        v = float(x) if pd.notna(x) else 0.0
+        return f"€{v:,.2f}".replace(",", " ")
+    except Exception:
+        return "€0.00"
+
+def _table(df, cols, header=None, empty="No data"):
+    if df is None or df.empty:
+        return f"<em>{empty}</em>"
+    use = [c for c in cols if c in df.columns]
+    t = df.loc[:, use].copy()
+    for c in t.columns:
+        if any(k in c for k in ("total","price","spend","value")):
+            t[c] = t[c].apply(_fmt_eur)
+    if header:
+        t.columns = header
+    return t.to_html(index=False, border=0, classes="tbl")
+
 STYLE = """
 <style>
  body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif;margin:24px;}
@@ -227,59 +251,74 @@ STYLE = """
 </style>
 """
 
+# Resolve receipt-based tables (use names from Section A if present)
+r_by_month = globals().get("r_by_month", pd.DataFrame())
+r_by_week  = globals().get("r_by_week",  pd.DataFrame())
+r_by_tod   = globals().get("r_by_tod",   pd.DataFrame())
+r_by_wday  = globals().get("r_by_wday",  pd.DataFrame())
+grand_total = float(globals().get("grand_total", 0.0))
+
+# Items tables (optional)
+price_change = globals().get("price_change", pd.DataFrame())
+cat = globals().get("cat", pd.DataFrame())
+pct_df = globals().get("pct_df", pd.DataFrame())
 items_total = float(it["line_total"].fillna(0).sum()) if "line_total" in it.columns else 0.0
 
 parts = []
-parts.insert(0, f"<div class='muted'>Build: {VERSION_TAG}</div>")  # 👈 add this line here
-
-# KPIs + reconciliation
 parts.append(f"""
 <h1>Naturalia — Spend Dashboard</h1>
 <div class="kpis">
   <div class="kpi"><div class="label">Receipts</div><div class="value">{len(rc)}</div></div>
   <div class="kpi"><div class="label">Items</div><div class="value">{len(it)}</div></div>
-  <div class="kpi"><div class="label">Receipts Total</div><div class="value">{fmt_eur(grand_total)}</div></div>
+  <div class="kpi"><div class="label">Receipts Total</div><div class="value">{_fmt_eur(grand_total)}</div></div>
 </div>
-<h3>Reconciliation</h3>
+<h3>Reconciliation (Items vs Receipts)</h3>
 <table class="tbl">
   <tr><th>Source</th><th>Amount</th></tr>
-  <tr><td>Receipts total</td><td>{fmt_eur(grand_total)}</td></tr>
-  <tr><td>Items total</td><td>{fmt_eur(items_total)}</td></tr>
-  <tr><td>Delta</td><td>{fmt_eur(items_total - grand_total)}</td></tr>
+  <tr><td>receipts_total</td><td>{_fmt_eur(grand_total)}</td></tr>
+  <tr><td>items_total</td><td>{_fmt_eur(items_total)}</td></tr>
+  <tr><td>delta</td><td>{_fmt_eur(items_total - grand_total)}</td></tr>
 </table>
 """)
-# time slices (RECEIPTS ONLY)
+
+# Time slices (RECEIPTS ONLY)
 parts.append("<h3>Spend by Month</h3>")
-parts.append(table_html(r_by_month, ["month","total"], ["Month","Spend"], "No dated receipts"))
+parts.append(_table(r_by_month, ["month","total"], ["Month","Spend"], "No dated receipts"))
 
 parts.append("<h3>Spend by ISO Week</h3>")
-parts.append(table_html(r_by_week, ["week","total"], ["Week","Spend"], "No dated receipts"))
+parts.append(_table(r_by_week, ["week","total"], ["Week","Spend"], "No dated receipts"))
 
 parts.append("<h3>Spend by Type of Day</h3>")
-parts.append(table_html(r_by_tod, ["type_of_day","total"], ["Type of Day","Spend"], "No dated receipts"))
+parts.append(_table(r_by_tod, ["type_of_day","total"], ["Type of Day","Spend"], "No dated receipts"))
 
 parts.append("<h3>Spend by Weekday</h3>")
-parts.append(table_html(r_by_wday, ["weekday","total"], ["Weekday","Spend"], "No dated receipts"))
+parts.append(_table(r_by_wday, ["weekday","total"], ["Weekday","Spend"], "No dated receipts"))
 
-# price change (warning-free Section B)
+# Price evolution
 parts.append("<h3>Price Change (Last vs Previous)</h3>")
-parts.append(table_html(
+parts.append(_table(
     price_change,
     ["item","prev_date","prev_price","last_date","last_price","Δ_price","Δ_%","days_between"],
     ["Item","Prev Date","Prev Price","Last Date","Last Price","Δ Price","Δ %","Days Between"],
     "No repeated products yet"
 ))
 
-# categories (learned)
+# Learned categories
 parts.append("<h3>Spend by Category (Learned)</h3>")
-parts.append(table_html(cat, ["category_name","spend"], ["Category","Spend"], "No learned categories yet"))
+parts.append(_table(cat, ["category_name","spend"], ["Category","Spend"], "No learned categories yet"))
 
-# percentiles
+# Percentiles
 parts.append("<h3>Price Percentiles (Unit Price)</h3>")
-parts.append(table_html(pct_df, ["percentile","value"], ["Percentile","Value"], "No prices"))
+parts.append(_table(pct_df, ["percentile","value"], ["Percentile","Value"], "No prices"))
 
-html = "<!doctype html><html><head><meta charset='utf-8'><title>Naturalia — Dashboard</title>" + STYLE + "</head><body>" + "".join(parts) + "</body></html>"
+html = (
+    "<!doctype html><html><head><meta charset='utf-8'>"
+    "<title>Naturalia — Dashboard</title>" + STYLE + "</head><body>"
+    + "".join(parts) + "</body></html>"
+)
+
 with open(OUT_HTML, "w", encoding="utf-8") as f:
     f.write(html)
 
 print(f"\nWrote {OUT_HTML}")
+
