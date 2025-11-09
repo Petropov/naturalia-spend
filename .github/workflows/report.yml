@@ -11,6 +11,10 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+
     steps:
       - uses: actions/checkout@v4
 
@@ -18,9 +22,20 @@ jobs:
         with:
           python-version: '3.11'
 
+      - name: Install OCR tools
+        run: sudo apt-get update && sudo apt-get install -y tesseract-ocr tesseract-ocr-fra poppler-utils
+
       - name: Python deps
+        run: pip install -r requirements.txt
+
+      - name: Dep sanity
         run: |
-          pip install -r requirements.txt
+          python - <<'PY'
+          import sys
+          print("python", sys.version)
+          import pdfminer.high_level, pytesseract, pandas, PIL
+          print("dep-check: ok")
+          PY
 
       - name: Recreate Gmail creds (for ingestion)
         env:
@@ -35,3 +50,35 @@ jobs:
           LOOKBACK_DAYS: ${{ github.event.inputs.lookback_days || '365' }}
           GMAIL_SEARCH_Q: "from:naturalia has:attachment filename:pdf newer_than:${{ github.event.inputs.lookback_days || '365' }}d"
         run: python -m src.gmail_pull
+
+
+      - name: Package outputs
+        run: |
+          mkdir -p out
+          [ -f data/receipts.csv ] && cp -v data/receipts.csv out/ || true
+          [ -f data/items.csv ]    && cp -v data/items.csv out/    || true
+          echo "${{ github.run_id }}" > out/_run_id.txt
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: naturalia-${{ github.run_id }}-$(date +%Y%m%d)-${{ github.event.inputs.lookback_days || '365' }}d
+          path: out/**
+          retention-days: 30
+
+      - name: Summary (dashboard)
+        run: |
+          echo "## Naturalia Ingestion – Run $GITHUB_RUN_ID" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Lookback**: ${{ github.event.inputs.lookback_days || '365' }} days" >> $GITHUB_STEP_SUMMARY
+          echo "- **Query**: \`from:naturalia has:attachment filename:pdf newer_than:${{ github.event.inputs.lookback_days || '365' }}d\`" >> $GITHUB_STEP_SUMMARY
+          if [ -f data/receipts.csv ]; then
+            RCPTS=$(($(wc -l < data/receipts.csv)-1)); RCPTS=${RCPTS#-}
+            echo "- **Receipts rows**: ${RCPTS:-0}" >> $GITHUB_STEP_SUMMARY
+          fi
+          if [ -f data/items.csv ]; then
+            ITEMS=$(($(wc -l < data/items.csv)-1)); ITEMS=${ITEMS#-}
+            echo "- **Line items**: ${ITEMS:-0}" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Artifact: \`naturalia-${GITHUB_RUN_ID}-$(date +%Y%m%d)-${{ github.event.inputs.lookback_days || '365' }}d\`" >> $GITHUB_STEP_SUMMARY
