@@ -4,12 +4,10 @@ from pathlib import Path
 from datetime import datetime
 from typing import Dict, Any
 from pdfminer.high_level import extract_text
-
 AMOUNT_RE = re.compile(r'(?<!\d)(?:€\s*)?-?\s*\d{1,3}(?:[ .]\d{3})*(?:[.,]\d{2})?\s*€?(?!\d)')
 TOTAL_HINTS_POS = ("total ttc","total à payer","total a payer","total a régler","total a regler","montant total","total","paiement","a payer")
 TOTAL_HINTS_NEG = ("sous-total","sous total","subtotal","total articles","total ligne","total remises")
 DATE_RES = [re.compile(r'(\d{2})/(\d{2})/(\d{4})'), re.compile(r'(\d{2})/(\d{2})/(\d{2})'), re.compile(r'(\d{4})-(\d{2})-(\d{2})')]
-
 def _normalize_amount(s: str) -> float | None:
     import math, re
     s0 = s.strip().replace('€', '').replace('\u00a0', ' ').strip()
@@ -40,11 +38,9 @@ def _normalize_amount(s: str) -> float | None:
                 return None
         return None
     return round(v, 2) if math.isfinite(v) else None
-
 def _text_via_pdfminer(b:bytes)->str:
     try: return extract_text(io.BytesIO(b)) or ""
     except: return ""
-
 def _text_via_pdftotext(b:bytes)->str:
     if not shutil.which("pdftotext"): return ""
     with tempfile.TemporaryDirectory() as td:
@@ -52,8 +48,6 @@ def _text_via_pdftotext(b:bytes)->str:
         out=Path(td,"out.txt")
         subprocess.run(["pdftotext","-layout",str(p),str(out)],check=False,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
         return out.read_text(encoding="utf-8",errors="ignore") if out.exists() else ""
-
-
 def _text_via_ocr(b:bytes)->str:
     import subprocess, tempfile, shutil
     from pathlib import Path
@@ -79,11 +73,9 @@ def _text_via_ocr(b:bytes)->str:
                     rows.setdefault(lid, []).append(cols[11])
             lines = [" ".join(v).strip() for _,v in sorted(rows.items()) if v]
             lines_all.extend([ln for ln in lines if ln])
-        return "
-".join(lines_all)
+        return "\n".join(lines_all)
     finally:
         shutil.rmtree(td, ignore_errors=True)
-
 def _extract_date(t:str)->str|None:
     t=t.replace("\u00a0"," ")
     for rx in DATE_RES:
@@ -101,7 +93,6 @@ def _extract_date(t:str)->str|None:
             return d.date().isoformat()
         except: pass
     return None
-
 def _extract_total(t:str)->float|None:
     lines=[ln.strip() for ln in t.splitlines() if ln.strip()]
     for ln in lines:
@@ -122,24 +113,20 @@ def _extract_total(t:str)->float|None:
     reasonable=[v for v in cands if 0<v<=300]
     if reasonable: return reasonable[-1]
     return cands[-1]
-
 def _extract_store(t:str)->str|None:
     lines=[ln.strip() for ln in t.splitlines() if ln.strip()]
     for ln in lines[:8]:
         if "naturalia" in ln.lower():
             return ln.strip()
     return None
-
 def _extract_postcode(t:str)->str|None:
     m=re.search(r'\b\d{5}\b', t)
     return m.group(0) if m else None
-
 def _extract_time(t:str)->str|None:
     m=re.search(r'\b(\d{2})(?:[:h])(\d{2})(?::(\d{2}))?\b', t)
     if not m: return None
     hh,mm,ss=m.group(1),m.group(2),m.group(3) or '00'
     return f"{hh}:{mm}:{ss}"
-
 def _num(s:str):
     s=s.replace("€","").replace("\u00a0"," ").strip()
     if " " in s and s.split()[-1].isdigit() and len(s.split()[-1])==2:
@@ -149,31 +136,24 @@ def _num(s:str):
     elif "," in s: s=s.replace(",",".")
     try: return round(float(s),2)
     except: return None
-
-
-
 def _extract_items(t:str):
     lines = [re.sub(r'[·•]|\u2022','', ln) for ln in t.splitlines()]
     clean = [re.sub(r'\.{2,}', ' ', ln).strip() for ln in lines if ln.strip()]
     items = []
-
     AMT_ONLY = re.compile(r'^-?\d{1,3}(?:[ .]\d{3})?[\s.,]\d{2}\s*€?$', re.U)
     AMT_TAIL = re.compile(r'(-?\d{1,3}(?:[ .]\d{3})*|-?\d+)[\s.,]\d{2}\s*€?$', re.U)
     MULT = re.compile(r'^(?:(?P<name>.+?)\s+)?(?P<qty>\d+)\s*[xX×]\s*(?P<unit>\d+[\s.,]\d{2})\s*(?:=|→)?\s*(?P<total>\d+[\s.,]\d{2})\s*€?$', re.U)
-
     BAD_WORDS = (
         'total','sous total','ttc','paiement','règlement','reglement','tva','carte','visa','mastercard',
         'caiss','client','bonjour','merci','rendu','espèces','especes','reste a payer','a payer',
         'nombre articles','========','====','---','__','cb','amex'
     )
-
     def is_header(name:str)->bool:
         low = name.lower()
         if any(k in low for k in BAD_WORDS): return True
         if len(name) <= 2: return True
         if all(ch in "=*_- .:/\\" for ch in low): return True
         return False
-
     def to_num(s):
         s = s.replace('€','').replace('\u00a0',' ').strip()
         if ' ' in s and s.split()[-1].isdigit() and len(s.split()[-1])==2:
@@ -183,7 +163,6 @@ def _extract_items(t:str):
         elif ',' in s: s = s.replace(',', '.')
         try: return round(float(s),2)
         except: return None
-
     # Pass 1: lines like "NAME .... 3,49" or "2 x 1,99 = 3,98"
     for raw in clean:
         m = MULT.match(raw)
@@ -201,7 +180,6 @@ def _extract_items(t:str):
             tot = to_num(mt.group(0))
             if nm and tot is not None and 0 < tot <= 300 and not is_header(nm):
                 items.append({'product_raw': nm, 'qty': 1, 'unit_price': None, 'line_total': tot})
-
     # Pass 2: amounts on their own line → pair with nearest previous non-header, non-amount line
     last_good = None
     for raw in clean:
@@ -213,7 +191,6 @@ def _extract_items(t:str):
                 items.append({'product_raw': last_good.strip(), 'qty': 1, 'unit_price': None, 'line_total': tot})
         else:
             last_good = raw
-
     # Deduplicate exact (name,total) pairs
     seen=set(); uniq=[]
     for it in items:
@@ -222,15 +199,12 @@ def _extract_items(t:str):
             continue
         seen.add(key); uniq.append(it)
     items = uniq
-
     # Fill unit_price if missing
     for it in items:
         if it.get('unit_price') is None and it.get('qty'):
             it['unit_price'] = round(it['line_total']/it['qty'], 2)
-
     for i,it in enumerate(items,1): it['line_no']=i
     return items
-
 def parse_attachment(b:bytes,fname:str)->Dict[str,Any]:
     txt=_text_via_pdfminer(b)
     if not txt.strip(): txt=_text_via_pdftotext(b)
