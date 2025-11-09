@@ -65,15 +65,15 @@ jobs:
       - name: Build HTML dashboard
         run: python scripts/build_dashboard.py
 
-
       - name: Package outputs
         run: |
           mkdir -p out
           [ -f data/receipts.csv ] && cp -v data/receipts.csv out/ || true
           [ -f data/items.csv ]    && cp -v data/items.csv out/    || true
           [ -f artifacts/dashboard.html ] && cp -v artifacts/dashboard.html out/ || true
+          [ -f artifacts/sanity_report.csv ] && cp -v artifacts/sanity_report.csv out/ || true
+          [ -f artifacts/sanity_summary.txt ] && cp -v artifacts/sanity_summary.txt out/ || true
           echo "${{ github.run_id }}" > out/_run_id.txt
-
 
       - name: Set TODAY date
         run: echo "TODAY=$(date +%Y%m%d)" >> $GITHUB_ENV
