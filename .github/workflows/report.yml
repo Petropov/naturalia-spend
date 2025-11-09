@@ -52,6 +52,16 @@ jobs:
           GMAIL_SEARCH_Q: "from:naturalia has:attachment filename:pdf newer_than:${{ github.event.inputs.lookback_days || '365' }}d"
         run: python -m src.gmail_pull
 
+      - name: Rebuild receipts from raw (local run parity)
+        run: python scripts/rebuild_receipts_from_raw.py
+
+      - name: OCR conservative items
+        run: PYTHONPATH=$(pwd) python scripts/ocr_items_from_pdfs_conservative.py
+
+      - name: Build sanity report
+        run: python scripts/sanity_reconciliation.py
+
+
       - name: Build HTML dashboard
         run: python scripts/build_dashboard.py
 
