@@ -7,3 +7,5 @@ python-dateutil
 pandas
 matplotlib
 rapidfuzz
+
+pdfminer.six>=2023.0.0
