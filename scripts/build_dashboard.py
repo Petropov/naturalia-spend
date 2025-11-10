@@ -336,8 +336,15 @@ html = (
     "<title>Naturalia — Dashboard</title>"
     + STYLE + "</head><body>" + "".join(parts) + "</body></html>"
 )
+
+# --- write HTML and announce where it went ---
+OUT_DIR = "artifacts"
+OUT_HTML = os.path.join(OUT_DIR, "dashboard.html")
+os.makedirs(OUT_DIR, exist_ok=True)
+
 with open(OUT_HTML, "w", encoding="utf-8") as f:
     f.write(html)
 
-print(f"\nWrote {OUT_HTML}")
+print(f"\nWrote {os.path.abspath(OUT_HTML)}")
 print("Analysis complete. Outputs saved to 'artifacts/'.")
+
