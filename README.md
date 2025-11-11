@@ -1,11 +1,12 @@
 # Naturalia Spend Tracker
 
-**Automated expense intelligence** for Naturalia receipts.  
-This project ingests receipts directly from Gmail, parses PDFs, and builds an analytical dashboard — fully automated, reproducible, and improving as more data arrives.
+**Automated expense intelligence** for Naturalia receipts: This project ingests receipts directly from Gmail, parses PDFs, and builds an analytical dashboard — fully automated, reproducible, and improving as more data arrives.
+
+I was just curious to understand the patterns of what i buy in naturalia, and to figure out how prices increase.
 
 ---
 
-## 🧩 Architecture Overview
+## Architecture Overview
 
 ### 1. Ingestion (Gmail → PDF → CSV)
 - **Source:** Gmail attachments matching  
@@ -38,7 +39,7 @@ This project ingests receipts directly from Gmail, parses PDFs, and builds an an
 
 ---
 
-## 📊 Dashboard (`artifacts/dashboard.html`)
+## Dashboard (`artifacts/dashboard.html`)
 
 The dashboard provides a receipt-based view of spend evolution, product behavior, and learned categories.
 
@@ -56,7 +57,7 @@ The dashboard provides a receipt-based view of spend evolution, product behavior
 
 ---
 
-## 🧠 Machine-Learned Categories (Unsupervised, French-aware)
+## Machine-Learned Categories (Unsupervised, French-aware)
 
 ### Script: `scripts/learn_categories.py`
 
