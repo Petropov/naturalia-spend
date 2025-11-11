@@ -102,17 +102,14 @@ As new receipts arrive, the learner retrains on the full dataset, improving cate
 ## Developer Guide
 
 ### Setup
-```bash
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 pip install joblib scikit-learn pdfminer.six pytesseract
 
+-----
 
-
-===========================================
-
-### 🧭 from a completely blank terminal
+## 🧭 from a completely blank terminal
 
 #### 1️⃣ navigate into your repo
 
