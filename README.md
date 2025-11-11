@@ -102,6 +102,7 @@ As new receipts arrive, the learner retrains on the full dataset, improving cate
 ## Developer Guide
 
 ### Setup
+
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
