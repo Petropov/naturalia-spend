@@ -163,59 +163,20 @@ else:
 
 if not price_change.empty:
     print(price_change.to_string(index=False))
-
+ 
 # ======================================================
 # C) Machine-learned categories (French-aware) + spend by category
 # ======================================================
+from scripts.learn_categories import main as learn_cats
+
+learn_cats()  # writes artifacts/*category* files
+
+# read the fresh breakdown to display and to keep accounting consistent
+cat = pd.read_csv("artifacts/categories_breakdown.csv")
 print("\n=== C) Machine-learned categories (French receipts) ===")
-
-def clean_fr(s: str) -> str:
-    s = (s or "").lower()
-    s = re.sub(r"\d+[x×]?\s*\d*(ml|l|g|kg|cl|pack|pcs)?", " ", s)
-    s = re.sub(r"[^a-zàâäéèêëîïôöùûüç\s]", " ", s)
-    s = re.sub(r"\s+", " ", s).strip()
-    return s
-
-it["clean"] = it[name_col].fillna("").map(clean_fr)
-it["line_total"] = pd.to_numeric(it["line_total"], errors="coerce").fillna(0)
-
-stop_fr = {
-    "de","du","des","le","la","les","un","une","et","ou","en","au","aux",
-    "pour","avec","sans","sur","sous","dans","à","par","chez","tout","tous"
-}
-
-vect = TfidfVectorizer(min_df=1, ngram_range=(1,2), stop_words=list(stop_fr))
-X = vect.fit_transform(it["clean"])
-
-k = min(max(5, len(it)//5), 15)
-km = KMeans(n_clusters=k, n_init="auto", random_state=42)
-labels = km.fit_predict(X)
-it["category_id"] = labels
-
-terms = vect.get_feature_names_out()
-def top_terms(center, n=3):
-    idx = center.argsort()[-n:][::-1]
-    return "|".join(terms[i] for i in idx)
-
-cat_names = [top_terms(c) for c in km.cluster_centers_]
-it["category_name"] = [cat_names[i] for i in labels]
-
-cat = (
-    it.groupby("category_name", as_index=False)["line_total"]
-      .sum().rename(columns={"line_total":"spend"})
-      .sort_values("spend", ascending=False)
-)
-
-print(f"Clusters learned (k={k})")
-print("-- Top categories by spend --")
 print(cat.to_string(index=False))
 print(f"\nSum of category spend: {float(cat['spend'].sum()):.2f}")
 print(f"Sum of all item totals : {float(it['line_total'].sum()):.2f}")
-
-print("\n-- Example items per cluster --")
-for name, sub in it.groupby("category_name"):
-    ex = ", ".join(sub[name_col].head(5))
-    print(f"{name}: {ex}")
 
 # persist learned mapping for later reuse in CI/pages
 it[[name_col,"category_name"]].drop_duplicates().rename(columns={name_col:"product"}).to_csv(
