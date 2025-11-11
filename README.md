@@ -88,7 +88,7 @@ As new receipts arrive, the learner retrains on the full dataset, improving cate
 
 ---
 
-## 🧮 Data Model
+## Data Model
 
 | File | Purpose | Key Columns |
 |------|----------|--------------|
@@ -99,7 +99,7 @@ As new receipts arrive, the learner retrains on the full dataset, improving cate
 
 ---
 
-## ⚙️ Developer Guide
+## Developer Guide
 
 ### Setup
 ```bash
@@ -107,3 +107,70 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 pip install joblib scikit-learn pdfminer.six pytesseract
+
+
+
+===========================================
+
+### 🧭 from a completely blank terminal
+
+#### 1️⃣ navigate into your repo
+
+```bash
+cd ~/naturalia-spend
+```
+
+#### 2️⃣ activate your virtual environment
+
+(macOS / Linux)
+
+```bash
+source .venv/bin/activate
+```
+
+(Windows PowerShell)
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+```
+
+if the venv doesn’t exist (e.g. new machine):
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+pip install joblib scikit-learn pdfminer.six pytesseract
+```
+
+#### 3️⃣ rebuild and open the dashboard
+
+```bash
+python scripts/build_dashboard.py && open artifacts/dashboard.html
+```
+
+---
+
+### 💡 optional shortcuts
+
+* **just rebuild, no browser:**
+
+  ```bash
+  python scripts/build_dashboard.py
+  ```
+* **rerun the full Gmail ingestion + report via GitHub Actions:**
+
+  ```bash
+  gh workflow run report.yml --ref main -f lookback_days=90
+  ```
+
+---
+
+### 🪄 TL;DR single command (once venv is set up)
+
+```bash
+cd ~/naturalia-spend && source .venv/bin/activate && python scripts/build_dashboard.py && open artifacts/dashboard.html
+```
+
+That’s all you’ll ever need in a blank shell to regenerate the latest Naturalia spend dashboard.
+
