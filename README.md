@@ -159,7 +159,7 @@ python scripts/build_dashboard.py && open artifacts/dashboard.html
 * **rerun the full Gmail ingestion + report via GitHub Actions:**
 
   ```bash
-  gh workflow run report.yml --ref main -f lookback_days=90
+  gh workflow run report.yml --ref main -f lookback_days=365
   ```
 
 ---
