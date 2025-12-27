@@ -7,13 +7,19 @@ on:
         description: Days to look back for Gmail attachments
         required: false
         default: '365'
+      trigger_reason:
+        description: Why this workflow was triggered (manual/schedule/new_receipt)
+        required: false
+        default: manual
+  schedule:
+    - cron: '0 6 * * *'
 
 jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      actions: read
+      actions: write
 
     steps:
       - uses: actions/checkout@v4
@@ -49,7 +55,9 @@ jobs:
       - name: Ingest Naturalia PDFs via Gmail API
         env:
           LOOKBACK_DAYS: ${{ github.event.inputs.lookback_days || '365' }}
-          GMAIL_SEARCH_Q: "from:naturalia has:attachment filename:pdf newer_than:${{ github.event.inputs.lookback_days || '365' }}d"
+          TRIGGER_REASON: ${{ github.event.inputs.trigger_reason || github.event_name }}
+          GMAIL_SEARCH_Q: >-
+            from:naturalia has:attachment filename:pdf newer_than:${{ github.event.inputs.lookback_days || '365' }}d
         run: python -m src.gmail_pull
 
       - name: Rebuild receipts from raw (local run parity)
