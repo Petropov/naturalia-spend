@@ -164,7 +164,7 @@ def _extract_items(t:str):
         try: return round(float(s),2)
         except: return None
     # Pass 1: lines like "NAME .... 3,49" or "2 x 1,99 = 3,98"
-    for raw in clean:
+    for idx, raw in enumerate(clean):
         m = MULT.match(raw)
         if m:
             nm = (m.group('name') or '').strip()
@@ -172,32 +172,34 @@ def _extract_items(t:str):
             unit = to_num(m.group('unit'))
             tot  = to_num(m.group('total'))
             if nm and tot is not None and 0 < tot <= 300 and not is_header(nm):
-                items.append({'product_raw': nm, 'qty': qty, 'unit_price': unit, 'line_total': tot})
+                items.append({'product_raw': nm, 'qty': qty, 'unit_price': unit, 'line_total': tot, '_src': idx})
             continue
         mt = AMT_TAIL.search(raw)
         if mt:
             nm = raw[:mt.start()].strip()
             tot = to_num(mt.group(0))
             if nm and tot is not None and 0 < tot <= 300 and not is_header(nm):
-                items.append({'product_raw': nm, 'qty': 1, 'unit_price': None, 'line_total': tot})
+                items.append({'product_raw': nm, 'qty': 1, 'unit_price': None, 'line_total': tot, '_src': idx})
+
     # Pass 2: amounts on their own line → pair with nearest previous non-header, non-amount line
     last_good = None
-    for raw in clean:
+    for idx, raw in enumerate(clean):
         if AMT_ONLY.match(raw):
             tot = to_num(raw)
-            if tot is None or not (0 < tot <= 300): 
+            if tot is None or not (0 < tot <= 300):
                 continue
             if last_good and not is_header(last_good) and not AMT_ONLY.match(last_good):
-                items.append({'product_raw': last_good.strip(), 'qty': 1, 'unit_price': None, 'line_total': tot})
+                items.append({'product_raw': last_good.strip(), 'qty': 1, 'unit_price': None, 'line_total': tot, '_src': idx})
         else:
             last_good = raw
     # Deduplicate exact (name,total) pairs
     seen=set(); uniq=[]
     for it in items:
-        key = (it['product_raw'].lower().strip(), it['line_total'])
-        if key in seen: 
+        key = (it.get('_src'), it['product_raw'].lower().strip(), it['line_total'])
+        if key in seen:
             continue
-        seen.add(key); uniq.append(it)
+        seen.add(key)
+        uniq.append(it)
     items = uniq
     # Fill unit_price if missing
     for it in items:
