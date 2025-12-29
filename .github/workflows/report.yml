@@ -7,10 +7,20 @@ on:
         description: Days to look back for Gmail attachments
         required: false
         default: '365'
+      trigger_reason:
+        description: Why this workflow was triggered (manual/schedule/new_receipt)
+        required: false
+        default: manual
+  schedule:
+    - cron: '0 6 * * *'
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write
+
     steps:
       - uses: actions/checkout@v4
 
@@ -18,9 +28,21 @@ jobs:
         with:
           python-version: '3.11'
 
+
+      - name: Install OCR tools
+        run: sudo apt-get update && sudo apt-get install -y tesseract-ocr tesseract-ocr-fra poppler-utils
+
       - name: Python deps
+        run: pip install -r requirements.txt
+
+      - name: Dep sanity
         run: |
-          pip install -r requirements.txt
+          python - <<'PY'
+          import sys
+          print("python", sys.version)
+          import pdfminer.high_level, pytesseract, pandas, PIL
+          print("dep-check: ok")
+          PY
 
       - name: Recreate Gmail creds (for ingestion)
         env:
@@ -33,5 +55,57 @@ jobs:
       - name: Ingest Naturalia PDFs via Gmail API
         env:
           LOOKBACK_DAYS: ${{ github.event.inputs.lookback_days || '365' }}
-          GMAIL_SEARCH_Q: "from:naturalia has:attachment filename:pdf newer_than:${{ github.event.inputs.lookback_days || '365' }}d"
+          TRIGGER_REASON: ${{ github.event.inputs.trigger_reason || github.event_name }}
+          GMAIL_SEARCH_Q: >-
+            from:naturalia has:attachment filename:pdf newer_than:${{ github.event.inputs.lookback_days || '365' }}d
         run: python -m src.gmail_pull
+
+      - name: Rebuild receipts from raw (local run parity)
+        run: python scripts/rebuild_receipts_from_raw.py
+
+      - name: OCR conservative items
+        run: PYTHONPATH=$(pwd) python scripts/ocr_items_from_pdfs_conservative.py
+
+      - name: Build sanity report
+        run: python scripts/sanity_reconciliation.py
+
+
+      - name: Build HTML dashboard
+        run: python scripts/build_dashboard.py
+
+      - name: Package outputs
+        run: |
+          mkdir -p out
+          [ -f data/receipts.csv ] && cp -v data/receipts.csv out/ || true
+          [ -f data/items.csv ]    && cp -v data/items.csv out/    || true
+          [ -f artifacts/dashboard.html ] && cp -v artifacts/dashboard.html out/ || true
+          [ -f artifacts/sanity_report.csv ] && cp -v artifacts/sanity_report.csv out/ || true
+          [ -f artifacts/sanity_summary.txt ] && cp -v artifacts/sanity_summary.txt out/ || true
+          echo "${{ github.run_id }}" > out/_run_id.txt
+
+      - name: Set TODAY date
+        run: echo "TODAY=$(date +%Y%m%d)" >> $GITHUB_ENV
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: naturalia-${{ github.run_id }}-${{ env.TODAY }}-${{ github.event.inputs.lookback_days || '365' }}d
+          path: out/**
+          retention-days: 30
+
+      - name: Summary (dashboard)
+        run: |
+          echo "## Naturalia Ingestion – Run $GITHUB_RUN_ID" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Lookback**: ${{ github.event.inputs.lookback_days || '365' }} days" >> $GITHUB_STEP_SUMMARY
+          echo "- **Query**: \`from:naturalia has:attachment filename:pdf newer_than:${{ github.event.inputs.lookback_days || '365' }}d\`" >> $GITHUB_STEP_SUMMARY
+          if [ -f data/receipts.csv ]; then
+            RCPTS=$(($(wc -l < data/receipts.csv)-1)); RCPTS=${RCPTS#-}
+            echo "- **Receipts rows**: ${RCPTS:-0}" >> $GITHUB_STEP_SUMMARY
+          fi
+          if [ -f data/items.csv ]; then
+            ITEMS=$(($(wc -l < data/items.csv)-1)); ITEMS=${ITEMS#-}
+            echo "- **Line items**: ${ITEMS:-0}" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Artifact: \`naturalia-${GITHUB_RUN_ID}-${{ env.TODAY }}-${{ github.event.inputs.lookback_days || '365' }}d\`" >> $GITHUB_STEP_SUMMARY
