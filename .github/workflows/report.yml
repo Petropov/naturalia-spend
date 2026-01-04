@@ -61,7 +61,22 @@ jobs:
         run: python -m src.gmail_pull
 
       - name: OCR conservative items
-        run: PYTHONPATH=$(pwd) python scripts/ocr_items_from_pdfs_conservative.py
+        working-directory: ${{ github.workspace }}
+        run: |
+          SCRIPT="$GITHUB_WORKSPACE/scripts/ocr_items_from_pdfs_conservative"
+          if [ ! -f "$SCRIPT" ]; then
+            echo "Expected OCR script at $SCRIPT but it was not found." >&2
+            exit 1
+          fi
+          PYTHONPATH=$GITHUB_WORKSPACE python "$SCRIPT"
+
+      - name: Debug workspace on failure
+        if: failure()
+        run: |
+          echo "Workspace: $GITHUB_WORKSPACE"
+          pwd
+          ls -la
+          ls -la scripts
 
       - name: Build sanity report
         run: python scripts/sanity_reconciliation.py
