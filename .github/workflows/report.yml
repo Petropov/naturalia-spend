@@ -30,7 +30,7 @@ jobs:
           python-version: '3.11'
 
       - name: Python syntax check
-        run: python -m py_compile scripts/*.py src/**/*.py
+        run: find scripts src -name "*.py" -print0 | xargs -0 -I{} python -m py_compile {}
 
 
       - name: Install OCR tools
