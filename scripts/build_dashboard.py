@@ -376,7 +376,7 @@ def __write_dashboard_html():
                      .sort_values("spend", ascending=False))
 
     # Price change table: optional placeholder (the main script can compute a real one)
-    price_change = globals().get("price_change", pd.Data120Frame()) if "pd" in globals() else pd.DataFrame()
+    price_change = globals().get("price_change", pd.DataFrame()) if "pd" in globals() else pd.DataFrame()
     if price_change.empty or not set(["item","prev_date","prev_price","last_date","last_price","Δ_price","Δ_%","days_between"]).issubset(price_change.columns):
         price_change = pd.DataFrame(columns=["item","prev_date","prev_price","last_date","last_price","Δ_price","Δ_%","days_between"])
 
