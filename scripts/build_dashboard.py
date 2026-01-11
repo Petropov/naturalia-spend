@@ -23,7 +23,6 @@ it = pd.read_csv(ITEM, low_memory=False)
 
 # receipts
 rc["date"] = pd.to_datetime(rc.get("date"), errors="coerce")
-rc["total"] = pd.to_numeric(rc.get("total"), errors="coerce").fill up to 0 if needed
 rc["total"] = pd.to_numeric(rc.get("total"), errors="coerce").fillna(0)
 
 # items
