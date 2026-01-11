@@ -83,7 +83,8 @@ jobs:
 
 
       - name: Build HTML dashboard
-        run: python scripts/build_dashboard.py
+        run: PYTHONPATH=$GITHUB_WORKSPACE python -m scripts.build_dashboard
+
 
       - name: Package outputs
         run: |
