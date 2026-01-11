@@ -11,3 +11,5 @@ rapidfuzz
 pdfminer.six>=2023.0.0
 
 pdfminer.six>=2023.0.0
+
+scikit-learn
