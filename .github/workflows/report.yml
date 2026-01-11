@@ -6,13 +6,14 @@ on:
       lookback_days:
         description: Days to look back for Gmail attachments
         required: false
-        default: '365'
+        default: 'ALL'
       trigger_reason:
         description: Why this workflow was triggered (manual/schedule/new_receipt)
         required: false
         default: manual
   schedule:
-    - cron: '0 6 * * *'
+    # Cron is in UTC. Change this to adjust local run time.
+    - cron: '0 15 * * 6'
 
 jobs:
   build:
@@ -54,10 +55,10 @@ jobs:
 
       - name: Ingest Naturalia PDFs via Gmail API
         env:
-          LOOKBACK_DAYS: ${{ github.event.inputs.lookback_days || '365' }}
+          LOOKBACK_DAYS: ${{ github.event.inputs.lookback_days || 'ALL' }}
           TRIGGER_REASON: ${{ github.event.inputs.trigger_reason || github.event_name }}
           GMAIL_SEARCH_Q: >-
-            from:naturalia has:attachment filename:pdf newer_than:${{ github.event.inputs.lookback_days || '365' }}d
+            from:naturalia has:attachment filename:pdf
         run: python -m src.gmail_pull
 
       - name: OCR conservative items
@@ -102,7 +103,7 @@ jobs:
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: naturalia-${{ github.run_id }}-${{ env.TODAY }}-${{ github.event.inputs.lookback_days || '365' }}d
+          name: naturalia-${{ github.run_id }}-${{ env.TODAY }}-${{ github.event.inputs.lookback_days || 'ALL' }}d
           path: out/**
           retention-days: 30
 
@@ -110,8 +111,8 @@ jobs:
         run: |
           echo "## Naturalia Ingestion – Run $GITHUB_RUN_ID" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- **Lookback**: ${{ github.event.inputs.lookback_days || '365' }} days" >> $GITHUB_STEP_SUMMARY
-          echo "- **Query**: \`from:naturalia has:attachment filename:pdf newer_than:${{ github.event.inputs.lookback_days || '365' }}d\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Lookback**: ${{ github.event.inputs.lookback_days || 'ALL' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Query**: \`from:naturalia has:attachment filename:pdf\`" >> $GITHUB_STEP_SUMMARY
           if [ -f data/receipts.csv ]; then
             RCPTS=$(($(wc -l < data/receipts.csv)-1)); RCPTS=${RCPTS#-}
             echo "- **Receipts rows**: ${RCPTS:-0}" >> $GITHUB_STEP_SUMMARY
@@ -121,4 +122,4 @@ jobs:
             echo "- **Line items**: ${ITEMS:-0}" >> $GITHUB_STEP_SUMMARY
           fi
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Artifact: \`naturalia-${GITHUB_RUN_ID}-${{ env.TODAY }}-${{ github.event.inputs.lookback_days || '365' }}d\`" >> $GITHUB_STEP_SUMMARY
+          echo "Artifact: \`naturalia-${GITHUB_RUN_ID}-${{ env.TODAY }}-${{ github.event.inputs.lookback_days || 'ALL' }}d\`" >> $GITHUB_STEP_SUMMARY

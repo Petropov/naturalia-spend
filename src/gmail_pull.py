@@ -70,7 +70,13 @@ def get_label_id(svc, name):
     return None
 
 def _build_query(search_q: Optional[str], lookback: str, last_seen_internal_date: int) -> str:
-    query_parts = [search_q or f'newer_than:{lookback}d']
+    query_parts = []
+    if search_q:
+        query_parts.append(search_q)
+    else:
+        normalized_lookback = (lookback or '').strip().lower()
+        if normalized_lookback and normalized_lookback not in {'all', '0'}:
+            query_parts.append(f'newer_than:{lookback}d')
     if last_seen_internal_date:
         # internalDate is in ms since epoch; Gmail expects seconds for the "after:" operator
         after_ts = (last_seen_internal_date // 1000) + 1
