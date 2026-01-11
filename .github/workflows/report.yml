@@ -96,6 +96,9 @@ jobs:
           [ -f data/receipts.csv ] && cp -v data/receipts.csv out/ || true
           [ -f data/items.csv ]    && cp -v data/items.csv out/    || true
           [ -f artifacts/dashboard.html ] && cp -v artifacts/dashboard.html out/ || true
+          [ -f artifacts/categories_learned.csv ] && cp -v artifacts/categories_learned.csv out/ || true
+          [ -f artifacts/categories_breakdown.csv ] && cp -v artifacts/categories_breakdown.csv out/ || true
+          [ -f artifacts/categories_meta.json ] && cp -v artifacts/categories_meta.json out/ || true
           [ -f artifacts/sanity_report.csv ] && cp -v artifacts/sanity_report.csv out/ || true
           [ -f artifacts/sanity_summary.txt ] && cp -v artifacts/sanity_summary.txt out/ || true
           echo "${{ github.run_id }}" > out/_run_id.txt
