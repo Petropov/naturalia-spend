@@ -39,7 +39,7 @@ rc_valid = rc.dropna(subset=["date"]).copy()
 grand_total = float(rc_valid["total"].sum())
 
 r_by_month = (
-    rc_valid.assign(month=rc_valid["date"].dt.toPeriod("M").astype(str))
+    rc_valid.assign(month=rc_valid["date"].dt.to_period("M").astype(str))
             .groupby("month", as_index=False)["total"].sum()
             .sort_values("month")
 )
