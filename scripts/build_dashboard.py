@@ -170,6 +170,25 @@ from scripts.learn_categories import main as learn_cats
 
 learn_cats()  # writes artifacts/*category* files
 
+# Merge learned categories back into items (it) so we can export category_name per product
+if "category_name" not in it.columns:
+    learned_path = os.path.join(OUT_DIR, "categories_learned.csv")
+    if os.path.exists(learned_path):
+        learned = pd.read_csv(learned_path)
+
+        # learned file should have: product, category_name
+        if "product" in learned.columns and "category_name" in learned.columns:
+            it = it.merge(
+                learned[["product", "category_name"]].drop_duplicates(),
+                left_on=name_col,
+                right_on="product",
+                how="left",
+            ).drop(columns=["product"], errors="ignore")
+        else:
+            print(f"WARNING: {learned_path} missing 'product'/'category_name' columns; skipping merge.")
+    else:
+        print(f"WARNING: {learned_path} not found; skipping merge.")
+
 # read the fresh breakdown to display and to keep accounting consistent
 cat = pd.read_csv("artifacts/categories_breakdown.csv")
 print("\n=== C) Machine-learned categories (French receipts) ===")
